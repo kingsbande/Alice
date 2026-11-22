@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f8faff; --sidebar: #f1f5fb; --surface: #fff; --ink: #1b2b42; --muted: #718096;
+    --blue: #2563eb; --blue-deep: #1d4ed8; --blue-soft: #edf3ff; --line: #e1e8f2; --error: #b42318;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111827; --sidebar: #151f30; --surface: #182235; --ink: #e7edf7; --muted: #9aa9bd;
+      --blue: #77a6ff; --blue-deep: #4f83e8; --blue-soft: #202f4c; --line: #2b394f; --error: #ff958c;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { min-width: 320px; min-height: 100%; margin: 0; background: var(--bg); color: var(--ink); font-family: "Sora", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { min-height: 100vh; }
+  button, textarea, select { font: inherit; }
+  button { color: inherit; }
+  button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  [hidden] { display: none !important; }
+
+  .app-shell { display: flex; min-height: 100vh; }
+  .sidebar { width: 258px; flex: 0 0 258px; display: flex; flex-direction: column; padding: 28px 20px 22px; background: var(--sidebar); border-right: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 11px; color: var(--ink); text-decoration: none; }
+  .brand-mark, .welcome-mark, #log .alice::before { display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #4f8dff, #1d4ed8); font-weight: 600; }
+  .brand-mark { width: 38px; height: 38px; border-radius: 13px; font-size: 1.05rem; box-shadow: 0 5px 14px rgba(37, 99, 235, 0.2); }
+  .brand-name { display: flex; flex-direction: column; gap: 2px; font-size: 1rem; font-weight: 600; letter-spacing: -0.02em; }
+  .brand-name small { color: var(--muted); font-size: 0.61rem; font-weight: 600; letter-spacing: 0.13em; }
+  .sidebar-note { margin: 46px 8px 0; color: var(--muted); font-size: 0.86rem; line-height: 1.7; }
+  .sidebar-note strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: 0.9rem; font-weight: 500; }
+  .conversation { min-width: 0; min-height: 100vh; flex: 1; display: flex; flex-direction: column; }
+  .topbar { position: relative; z-index: 3; height: 68px; flex: 0 0 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 34px; background: color-mix(in srgb, var(--surface) 78%, transparent); border-bottom: 1px solid var(--line); }
+  .topbar-heading { display: flex; align-items: center; gap: 9px; font-size: 0.9rem; font-weight: 600; }
+  .topbar-caption { color: var(--muted); font-size: 0.78rem; font-weight: 400; }
+  .topbar-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--blue); }
+  .topbar-actions { display: flex; align-items: center; gap: 9px; }
+  .quiet-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 13px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 0.78rem; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
+  .quiet-button:hover { color: var(--blue-deep); background: var(--blue-soft); border-color: color-mix(in srgb, var(--blue) 25%, var(--line)); }
+  .quiet-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+  .voice-menu { position: relative; }
+  .voice-menu summary { list-style: none; }
+  .voice-menu summary::-webkit-details-marker { display: none; }
+  .voice-popover { position: absolute; top: calc(100% + 10px); right: 0; z-index: 5; width: min(270px, calc(100vw - 28px)); padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 36px rgba(25, 43, 68, 0.14); }
+  .voice-popover label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+  .voice-popover select { width: 100%; min-width: 0; padding: 10px 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .voice-popover p { margin: 9px 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.5; }
+
+  .chat-content { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .welcome { width: min(760px, calc(100% - 48px)); flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; padding: 30px 0 38px; text-align: center; }
+  .welcome-mark { width: 52px; height: 52px; margin-bottom: 22px; border-radius: 18px; font-size: 1.25rem; box-shadow: 0 8px 24px rgba(37, 99, 235, 0.2); }
+  .eyebrow { margin: 0 0 12px; color: var(--blue); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.16em; }
+  .welcome h1 { margin: 0; font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 400; letter-spacing: -0.055em; line-height: 1.15; }
+  .welcome-copy { max-width: 500px; margin: 14px 0 30px; color: var(--muted); font-size: 0.95rem; line-height: 1.7; }
+  .suggestions { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; text-align: left; }
+  .suggestion { min-height: 112px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 15px 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; text-align: left; transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease; }
+  .suggestion:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); box-shadow: 0 8px 22px rgba(34, 68, 120, 0.08); }
+  .suggestion-title { font-size: 0.8rem; font-weight: 600; line-height: 1.45; }
+  .suggestion-detail { color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+
+  #log { width: min(760px, calc(100% - 48px)); min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 28px; margin: 0 auto; padding: 38px 0 24px; overflow-y: auto; scroll-behavior: smooth; }
+  #log p { position: relative; margin: 0; max-width: 100%; font-size: 0.96rem; line-height: 1.8; overflow-wrap: anywhere; }
+  #log .user { align-self: flex-end; max-width: 82%; padding: 12px 16px; color: var(--ink); background: var(--blue-soft); border: 1px solid color-mix(in srgb, var(--blue) 10%, transparent); border-radius: 17px 17px 5px 17px; }
+  #log .alice { align-self: flex-start; padding-left: 42px; }
+  #log .alice::before { position: absolute; top: 1px; left: 0; width: 28px; height: 28px; border-radius: 10px; content: "A"; font-size: 0.76rem; }
+
+  .chat-footer { width: min(820px, 100%); margin: 0 auto; padding: 8px 24px 18px; }
+  .status-line { min-height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 8px 8px; }
+  .status-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--blue); }
+  #status { min-height: 1.3em; margin: 0; color: var(--muted); font-size: 0.74rem; }
+  #status.error { color: var(--error); }
+  .composer { padding: 12px 12px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 7px 24px rgba(36, 57, 91, 0.06); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+  .composer:focus-within { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 10%, transparent), 0 8px 26px rgba(36, 57, 91, 0.07); }
+  #box { display: block; width: 100%; min-height: 44px; max-height: 180px; padding: 8px 8px 10px; resize: none; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 0.92rem; line-height: 1.6; }
+  #box::placeholder { color: #98a5b7; }
+  #box:focus-visible { outline: 0; }
+  .composer-tools { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+  .voice-action { display: flex; align-items: center; gap: 7px; }
+  .voice-control { position: relative; width: 38px; height: 38px; display: grid; place-items: center; }
+  .orb { position: relative; z-index: 2; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--blue-deep); background: var(--blue-soft); border: 0; border-radius: 12px; cursor: pointer; transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease; }
+  .orb:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--blue) 15%, var(--blue-soft)); }
+  .orb:active { transform: scale(0.96); }
+  .orb:focus-visible { outline-offset: 4px; }
+  .orb svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .orb[data-state="listening"] { color: #fff; background: var(--blue); }
+  .orb[data-state="thinking"] { color: var(--muted); }
+  .orb[data-state="speaking"] { color: #fff; background: var(--blue-deep); }
+  .ring { position: absolute; inset: 0; border: 1px solid var(--blue); border-radius: 14px; opacity: 0; pointer-events: none; }
+  .orb[data-state="listening"] ~ .ring { animation: pulse 1.5s ease-out infinite; }
+  .orb[data-state="listening"] ~ .ring.r2 { animation-delay: 0.75s; }
+  .voice-hint { color: var(--muted); font-size: 0.72rem; }
+  .keyboard-hint { margin-left: auto; color: var(--muted); font-size: 0.68rem; }
+  #send { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; padding: 0; color: #fff; background: var(--blue); border: 0; border-radius: 12px; cursor: pointer; transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease; }
+  #send:hover:not(:disabled) { transform: translateY(-1px); background: var(--blue-deep); }
+  #send:disabled { cursor: default; opacity: 0.42; }
+  #send svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .privacy-note { margin: 10px 0 0; color: var(--muted); font-size: 0.65rem; line-height: 1.5; text-align: center; }
+  @keyframes pulse { from { transform: scale(0.9); opacity: 0.55; } to { transform: scale(1.65); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  @media (max-width: 760px) {
+    .sidebar { display: none; }
+    .topbar { padding: 0 20px; }
+    .welcome { width: min(620px, calc(100% - 36px)); }
+    #log { width: min(680px, calc(100% - 36px)); }
+    .chat-footer { padding-right: 18px; padding-left: 18px; }
+  }
+  @media (max-width: 520px) {
+    .topbar { height: 60px; flex-basis: 60px; padding: 0 14px; }
+    .topbar-caption, .keyboard-hint { display: none; }
+    .welcome { justify-content: flex-start; padding-top: 14vh; }
+    .welcome-copy { margin-bottom: 24px; font-size: 0.88rem; }
+    .suggestions { grid-template-columns: 1fr; gap: 9px; }
+    .suggestion { min-height: 76px; gap: 5px; padding: 12px 14px; }
+    #log { width: calc(100% - 30px); padding-top: 24px; }
+    #log .user { max-width: 92%; }
+    .chat-footer { padding: 6px 12px 12px; }
+    .composer { padding: 9px; border-radius: 16px; }
+    #box { min-height: 42px; font-size: 0.88rem; }
+    .privacy-note { font-size: 0.61rem; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Alice settings">
+    <a class="brand" href="#" aria-label="Alice home">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span class="brand-name">Alice<small>VOICE ASSISTANT</small></span>
+    </a>
+    <div class="sidebar-note">
+      <strong>A little space to think.</strong>
+      Ask a question, explore an idea, or talk it through out loud.
+    </div>
+  </aside>
+  <main class="conversation">
+    <header class="topbar">
+      <div class="topbar-heading">Alice<span class="topbar-dot" aria-hidden="true"></span><span class="topbar-caption">Your voice assistant</span></div>
+      <div class="topbar-actions">
+        <details class="voice-menu">
+          <summary class="quiet-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 9a5 5 0 0 1 0 6M18 5a10 10 0 0 1 0 14"/></svg>
+            Voice
+          </summary>
+          <div class="voice-popover">
+            <label for="voice">Spoken voice</label>
+            <select id="voice"><option value="">Alice’s default</option></select>
+            <p>Uses the speech voices available in your browser.</p>
+          </div>
+        </details>
+        <button class="quiet-button" id="new-chat" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          New chat
+        </button>
+      </div>
+    </header>
+    <div class="chat-content">
+      <section class="welcome" id="welcome">
+        <div class="welcome-mark" aria-hidden="true">A</div>
+        <p class="eyebrow">A THOUGHTFUL ASSISTANT</p>
+        <h1>What’s on your mind?</h1>
+        <p class="welcome-copy">Bring a question, a half-formed idea, or something you’d like help figuring out.</p>
+        <div class="suggestions" aria-label="Try asking Alice">
+          <button class="suggestion" type="button" data-prompt="Explain photosynthesis in a simple way for a Form 1 student.">
+            <span class="suggestion-title">Make a tricky idea simple</span>
+            <span class="suggestion-detail">Get a clear, friendly explanation</span>
+          </button>
+          <button class="suggestion" type="button" data-prompt="Help me brainstorm a few creative ideas for a small project.">
+            <span class="suggestion-title">Explore some ideas</span>
+            <span class="suggestion-detail">Start with a thought and build on it</span>
+          </button>
+          <button class="suggestion" type="button" data-prompt="Help me write a warm, thoughtful message.">
+            <span class="suggestion-title">Find the right words</span>
+            <span class="suggestion-detail">Draft something clear and natural</span>
+          </button>
+        </div>
+      </section>
+      <div id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+    </div>
+    <footer class="chat-footer">
+      <div class="status-line">
+        <span class="status-dot" aria-hidden="true"></span>
+        <p id="status" role="status" aria-live="polite">Ready when you are</p>
+      </div>
+      <div class="composer">
+        <textarea id="box" rows="1" placeholder="Message Alice…" autocomplete="off" aria-label="Message Alice"></textarea>
+        <div class="composer-tools">
+          <div class="voice-action">
+            <div class="voice-control">
+              <button class="orb" id="orb" data-state="idle" type="button" aria-label="Start voice input" title="Talk to Alice">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+              </button>
+              <span class="ring" aria-hidden="true"></span><span class="ring r2" aria-hidden="true"></span>
+            </div>
+            <span class="voice-hint">Talk</span>
+          </div>
+          <span class="keyboard-hint">Enter to send · Shift + Enter for a new line</span>
+          <button id="send" type="button" aria-label="Send message" title="Send message" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="privacy-note">AI can make mistakes. Avoid sharing sensitive information.</p>
+    </footer>
+  </main>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const orb = $("#orb"), statusEl = $("#status"), log = $("#log"), box = $("#box");
+const welcome = $("#welcome"), sendButton = $("#send");
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const LABELS = { idle: "Ready when you are", listening: "Listening… tap the mic to finish", thinking: "Alice is thinking…", speaking: "Alice is speaking. Tap the mic to talk." };
+
+let state = "idle", rec = null, history = [], speakToken = 0, voices = [], activeRequest = null;
+
+function updateControls() {
+  sendButton.disabled = state === "thinking" || !box.value.trim();
+}
+
+function setState(s, msg, isError) {
+  state = s;
+  orb.dataset.state = s;
+  orb.disabled = s === "thinking";
+  orb.setAttribute("aria-label", s === "listening" ? "Stop voice input" : s === "speaking" ? "Interrupt Alice and use voice input" : s === "thinking" ? "Alice is thinking" : "Start voice input");
+  statusEl.textContent = msg || LABELS[s];
+  statusEl.className = isError ? "error" : "";
+  updateControls();
+}
+
+function addLine(role, text) {
+  welcome.hidden = true;
+  const p = document.createElement("p");
+  p.className = role; p.textContent = text;
+  log.append(p);
+  p.scrollIntoView({ block: "end", behavior: "smooth" });
+}
+
+/* ---------- speaking ---------- */
+// Alice's default voice: the first match in this list that exists on the device.
+const PREFERRED = [/google uk english female/i, /aria|jenny|zira/i, /samantha|karen|moira|tessa|serena/i, /female/i];
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+
+function loadVoices() {
+  voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+  const sel = $("#voice");
+  if (!sel) return;
+  sel.innerHTML = "";
+  sel.append(new Option("Alice’s default", ""));
+  voices.forEach((v) => sel.append(new Option(`${v.name} (${v.lang})`, v.name)));
+  const saved = store.get("aliceVoice");
+  sel.value = voices.some((v) => v.name === saved) ? saved : "";
+}
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+function pickVoice() {
+  const chosen = voices.find((v) => v.name === store.get("aliceVoice"));
+  if (chosen) return chosen;
+  for (const re of PREFERRED) {
+    const v = voices.find((x) => re.test(x.name));
+    if (v) return v;
+  }
+  return voices[0] || null;
+}
+
+function speak(text, timing = null) {
+  if (!("speechSynthesis" in window)) { setState("idle"); return; }
+  speechSynthesis.cancel();
+  const token = ++speakToken;
+  const clean = text.replace(/\[(.*?)\]\(.*?\)/g, "$1").replace(/[*_`#>]/g, "");
+  const parts = clean.match(/[^.!?]+[.!?]*/g) || [clean];   // short chunks avoid Chrome cutting off long speech
+  const voice = pickVoice();
+  let speechStarted = false;
+  setState("speaking");
+  parts.forEach((part, i) => {
+    const u = new SpeechSynthesisUtterance(part.trim());
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.onstart = () => {
+      if (!speechStarted && timing) {
+        speechStarted = true;
+        console.info("[Alice timing]", {
+          event: "speech-start",
+          timeToSpeechStartMs: Math.round(performance.now() - timing.requestStartedAt),
+          speechQueueDelayMs: Math.round(performance.now() - timing.responseReadyAt),
+        });
+      }
+    };
+    if (i === parts.length - 1) {
+      u.onend = u.onerror = () => { if (token === speakToken && state === "speaking") setState("idle"); };
+    }
+    speechSynthesis.speak(u);
+  });
+}
+
+function stopSpeaking() { speakToken++; if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+
+/* ---------- asking ---------- */
+async function ask(text, inputTiming = {}) {
+  text = text.trim();
+  if (!text || state === "thinking") return;
+  addLine("user", text);
+  history.push({ role: "user", content: text });
+  history = history.slice(-10);
+  setState("thinking");
+  const controller = new AbortController();
+  activeRequest = controller;
+  const requestStartedAt = performance.now();
+  let responseHeadersMs = null;
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+      signal: controller.signal,
+    });
+    if (activeRequest !== controller) return;
+    responseHeadersMs = performance.now() - requestStartedAt;
+    const data = await res.json().catch(() => ({}));
+    if (activeRequest !== controller) return;
+    const responseReadyAt = performance.now();
+    if (!res.ok) throw new Error(data.error || "Something went wrong. Try again.");
+    console.info("[Alice timing]", {
+      source: inputTiming.source || "unknown",
+      recognitionMs: inputTiming.recognitionMs == null ? null : Math.round(inputTiming.recognitionMs),
+      responseHeadersMs: Math.round(responseHeadersMs),
+      requestMs: Math.round(responseReadyAt - requestStartedAt),
+      provider: data.provider || null,
+      providerMs: Number.isFinite(data.timing && data.timing.providerMs) ? data.timing.providerMs : null,
+      serverMs: Number.isFinite(data.timing && data.timing.serverMs) ? data.timing.serverMs : null,
+    });
+    history.push({ role: "assistant", content: data.reply });
+    addLine("alice", data.reply);
+    speak(data.reply, { requestStartedAt, responseReadyAt });
+  } catch (err) {
+    if (activeRequest !== controller) return;
+    history.pop();
+    console.info("[Alice timing]", {
+      source: inputTiming.source || "unknown",
+      recognitionMs: inputTiming.recognitionMs == null ? null : Math.round(inputTiming.recognitionMs),
+      responseHeadersMs: responseHeadersMs == null ? null : Math.round(responseHeadersMs),
+      requestMs: Math.round(performance.now() - requestStartedAt),
+      outcome: "error",
+    });
+    setState("idle", err.message || "Can’t reach Alice. Check your connection and try again.", true);
+  } finally {
+    if (activeRequest === controller) activeRequest = null;
+  }
+}
+
+/* ---------- listening ---------- */
+function listen() {
+  if (!SR) {
+    setState("idle", "Voice input isn’t supported in this browser. Use Chrome or Edge, or type below.", true);
+    box.focus();
+    return;
+  }
+  let finalText = "", failed = false;
+  const recognitionStartedAt = performance.now();
+  rec = new SR();
+  rec.lang = "en-US";
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    if (interim) statusEl.textContent = interim;
+  };
+  rec.onerror = (e) => {
+    failed = true;
+    console.info("[Alice timing]", {
+      source: "voice",
+      recognitionMs: Math.round(performance.now() - recognitionStartedAt),
+      outcome: "recognition-error",
+      error: e.error,
+    });
+    const msg = {
+      "not-allowed": "Microphone is blocked. Allow microphone access in your browser’s site settings, then tap again.",
+      "service-not-allowed": "Microphone is blocked. Allow microphone access in your browser’s site settings, then tap again.",
+      "no-speech": "Didn’t catch that. Tap and try again.",
+      "network": "Speech recognition needs an internet connection. Check it and try again.",
+      "audio-capture": "No microphone found. Plug one in or type below.",
+    }[e.error] || "Voice input stopped unexpectedly. Tap to try again.";
+    setState("idle", msg, e.error !== "no-speech");
+  };
+  rec.onend = () => {
+    if (failed) return;
+    if (finalText.trim()) {
+      ask(finalText, { source: "voice", recognitionMs: performance.now() - recognitionStartedAt });
+    } else {
+      console.info("[Alice timing]", {
+        source: "voice",
+        recognitionMs: Math.round(performance.now() - recognitionStartedAt),
+        outcome: "no-speech",
+      });
+      if (state === "listening") setState("idle");
+    }
+  };
+  stopSpeaking();
+  setState("listening");
+  try { rec.start(); } catch { setState("idle"); }
+}
+
+orb.addEventListener("click", () => {
+  if (state === "listening") rec && rec.stop();
+  else if (state === "speaking" || state === "idle") listen();
+});
+
+$("#voice").addEventListener("change", (e) => {
+  store.set("aliceVoice", e.target.value);
+  speak("Hi, I’m Alice.");
+});
+
+function sendTyped() {
+  const text = box.value;
+  if (!text.trim() || state === "thinking") return;
+  box.value = "";
+  box.style.height = "";
+  updateControls();
+  stopSpeaking();
+  ask(text, { source: "typed" });
+}
+
+box.addEventListener("input", () => {
+  box.style.height = "auto";
+  box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
+  updateControls();
+});
+sendButton.addEventListener("click", sendTyped);
+box.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendTyped();
+  }
+});
+
+document.querySelectorAll("[data-prompt]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (state !== "thinking") ask(button.dataset.prompt, { source: "suggestion" });
+  });
+});
+
+$("#new-chat").addEventListener("click", () => {
+  if (activeRequest) {
+    activeRequest.abort();
+    activeRequest = null;
+  }
+  if (rec) {
+    rec.onend = null;
+    rec.onerror = null;
+    try { rec.abort(); } catch {}
+    rec = null;
+  }
+  stopSpeaking();
+  history = [];
+  log.replaceChildren();
+  welcome.hidden = false;
+  box.value = "";
+  box.style.height = "";
+  setState("idle");
+  box.focus();
+});
+</script>
+</body>
+</html>
