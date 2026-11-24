@@ -7,6 +7,7 @@ Browser voice (Web Speech API) + a serverless proxy that falls back across free 
 - `api/chat.js`: Vercel serverless function. Tries Gemini, then Groq, then OpenRouter.
 - `api/speak.js`: protected Fish Audio text-to-speech proxy with built-in voice fallback in the browser.
 - `api/send-email.js`: sends a confirmed draft to a contact using Gmail SMTP.
+- `pc-agent/`: optional Windows-only local helper for confirmed PC actions. It is excluded from Vercel deployments.
 
 ## Run it
 1. Create free API keys with any of: Groq, Google AI Studio (Gemini), OpenRouter. One key is enough; more means more fallback.
@@ -36,6 +37,15 @@ The daily email cap is best-effort: Vercel serverless instances do not share the
 Web search runs only when a question appears time-sensitive, helping conserve Tavily's free quota. The `searched` field in the `/api/chat` response indicates whether results were used. Tavily's free allowance can change, so check your Tavily dashboard for current limits.
 
 Weather questions use live observations and a three-day forecast from Open-Meteo instead of web-search snippets. Alice asks for a city or town and country when the request doesn't include a location. No Open-Meteo API key is required.
+
+## PC control (optional, Windows)
+PC control is off by default. To enable it, first run the local helper using the instructions in [pc-agent/README.md](./pc-agent/README.md), set the helper's exact Alice site origin in `pc-agent/config.json`, then paste its pairing token and enable **PC control** in Alice's Settings. The helper is not deployed to Vercel.
+
+Alice can propose only the apps, folders, sites, and controls listed in the helper's local `actions.json`. A proposal appears as a confirmation card and is spoken aloud; it runs only after you press **Confirm** or clearly say “yes”. **Cancel** or “cancel” runs nothing. An email draft or a PC action is the only pending confirmation at a time.
+
+The local helper binds to `127.0.0.1`, requires its bearer token for every request except the CORS preflight, and accepts only configured target keys and supported action names. The AI receives target names only: paths, site URLs, and the pairing token stay in the browser/local helper and are never sent to the cloud. The helper does not run arbitrary shell commands or user/model text; media keys use only a fixed hard-coded snippet. Review `actions.json` carefully: each configured app, folder, and site grants Alice permission to open it when you confirm. PC actions are rate-limited and recorded in the local audit log.
+
+Chrome's Local Network Access permission is rolling out from Chrome 142. Because Alice's deployed site connects to a loopback helper, Chrome may prompt you to allow that site to access the local network; allow it for PC control to work. This browser permission is separate from Alice's confirmation card and the helper's token/CORS checks. See [Chrome's Local Network Access update](https://developer.chrome.com/blog/local-network-access).
 
 ## Personality and settings
 Alice uses a calm, capable, quietly witty butler-like style: concise spoken replies, honest uncertainty, and rare dry humor. Open **Settings** to choose what she calls you, and choose **Auto (Fish Audio, then built-in)** or **Built-in only** for speech. These preferences are stored in this browser's local storage. The browser voice picker selects the voice used by the built-in engine and for Fish Audio fallback.
@@ -77,6 +87,16 @@ Model names change. If a provider starts failing, set `GROQ_MODEL`, `GEMINI_MODE
 3. Try an unknown contact; Alice should refuse to send.
 4. Try a wrong or missing access code; the API should refuse the request.
 5. Set `MAX_EMAILS_PER_DAY` to `1`, send one test message, then try another; the second send should show the daily-cap message.
+
+### PC control
+1. Start the helper, then send `/capabilities` requests with no token and with a wrong bearer token; both must return `401`.
+2. With PC control enabled, ask Alice to "open notepad". Check that a confirmation card appears and that Notepad opens only after clicking **Confirm** or saying "yes".
+3. Ask to open Notepad again and click **Cancel** or say "cancel"; verify it does not open.
+4. Remove or rename a target in `pc-agent/actions.json`, restart the helper, and reload Alice. Verify that target is not offered.
+5. Confirm volume up/down, mute, and media play/pause, next, and previous actions; verify each operates the Windows media keys.
+6. Stop the helper before loading (or reload) Alice, then ask for a PC action; Alice should say it can't reach the helper and should not offer an action.
+7. Confirm an action and inspect `pc-agent/audit.log`; it should record the timestamp, action, target key, and result, with no request text, paths, URLs, or token.
+8. Send a request with an `Origin` other than the configured Alice origin or `http://localhost:3000`; the helper must refuse it.
 
 ## Notes
 - Voice input needs Chrome or Edge and an internet connection. It sends audio to the browser vendor.

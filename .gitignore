@@ -1,3 +1,5 @@
 .vercel
 .env
 node_modules/
+pc-agent/token.txt
+pc-agent/audit.log

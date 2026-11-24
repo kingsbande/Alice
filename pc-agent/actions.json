@@ -1,0 +1,23 @@
+{
+  "apps": {
+    "notepad": "C:\\Windows\\System32\\notepad.exe",
+    "calculator": "C:\\Windows\\System32\\calc.exe"
+  },
+  "folders": {
+    "documents": "C:\\Users\\Datty Mgayi\\Documents",
+    "downloads": "C:\\Users\\Datty Mgayi\\Downloads"
+  },
+  "sites": {
+    "github": "https://github.com",
+    "youtube": "https://www.youtube.com"
+  },
+  "controls": [
+    "volume_up",
+    "volume_down",
+    "mute",
+    "media_play_pause",
+    "media_next",
+    "media_previous",
+    "lock_screen"
+  ]
+}

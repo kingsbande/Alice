@@ -62,6 +62,25 @@ const DRAFT_EMAIL_TOOL = {
     },
   },
 };
+const PC_ACTIONS = [
+  "open_app",
+  "open_folder",
+  "open_site",
+  "volume_up",
+  "volume_down",
+  "mute",
+  "media_play_pause",
+  "media_next",
+  "media_previous",
+  "lock_screen",
+];
+const PC_ACTION_TARGETS = {
+  open_app: "apps",
+  open_folder: "folders",
+  open_site: "sites",
+};
+const PC_REQUEST_PATTERN = /\b(open|launch|start|play|pause|next|previous|skip|volume|mute|lock|show)\b/i;
+const PC_TARGET_KEY_PATTERN = /^[a-z0-9 _-]{1,30}$/i;
 
 function sanitizeUserName(value) {
   if (typeof value !== "string") return "";
@@ -72,7 +91,7 @@ function sanitizeUserName(value) {
     .trim();
 }
 
-function buildSystemPrompt(userName) {
+function buildSystemPrompt(userName, includePcAction) {
   const today = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Blantyre",
     weekday: "long",
@@ -92,8 +111,90 @@ function buildSystemPrompt(userName) {
     "If no web results are provided and the question is about something current (a role holder, news, prices, scores), say briefly that your information may be out of date.\n" +
     "For weather requests, use only provided live weather data. If a location is missing, ask which city or town and country. If live weather data is unavailable, say you couldn't retrieve the current forecast instead of guessing.\n" +
     "To draft an email, call draft_email and use a contact name, never an email address. You can never send email yourself. The user must confirm before an email is sent." +
+    (includePcAction
+      ? "\nTo control the user's PC, call pc_action using only the provided target names. You cannot run it yourself; the user must confirm."
+      : "") +
     (userName ? `\nThe user prefers to be addressed as "${userName}". Use it occasionally, not in every reply.` : "")
   );
+}
+
+function sanitizePcCapabilities(value) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const cleanList = (list) => Array.isArray(list)
+    ? [...new Set(list.filter((key) => typeof key === "string" && PC_TARGET_KEY_PATTERN.test(key)))].slice(0, 30)
+    : [];
+  return {
+    apps: cleanList(input.apps),
+    folders: cleanList(input.folders),
+    sites: cleanList(input.sites),
+    controls: cleanList(input.controls),
+  };
+}
+
+function buildPcActionTool(capabilities) {
+  const targetNames = [...new Set([
+    ...capabilities.apps,
+    ...capabilities.folders,
+    ...capabilities.sites,
+  ])];
+  return {
+    type: "function",
+    function: {
+      name: "pc_action",
+      description: "Propose one PC action. The user must confirm it before it can run. Supply a target for open_app, open_folder, and open_site.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: PC_ACTIONS },
+          target: { type: "string", enum: targetNames },
+        },
+        required: ["action"],
+        allOf: [{
+          anyOf: [
+            {
+              properties: { action: { enum: Object.keys(PC_ACTION_TARGETS) } },
+              required: ["action", "target"],
+            },
+            {
+              properties: { action: { enum: PC_ACTIONS.filter((action) => !PC_ACTION_TARGETS[action]) } },
+              required: ["action"],
+            },
+          ],
+        }],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+function validatePcAction(value, capabilities) {
+  if (!value || !PC_ACTIONS.includes(value.action)) return null;
+  const targetGroup = PC_ACTION_TARGETS[value.action];
+  if (targetGroup) {
+    if (typeof value.target !== "string" || !capabilities[targetGroup].includes(value.target)) return null;
+    return { action: value.action, target: value.target };
+  }
+  if (!capabilities.controls.includes(value.action) || (value.target != null && value.target !== "")) return null;
+  return { action: value.action, target: null };
+}
+
+function pcActionQuestion(pcAction) {
+  const target = pcAction.target
+    ? pcAction.target.replace(/[_-]+/g, " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    : "";
+  const questions = {
+    open_app: `Shall I open ${target}?`,
+    open_folder: `Shall I open the ${target} folder?`,
+    open_site: `Shall I open ${target}?`,
+    volume_up: "Shall I turn the volume up?",
+    volume_down: "Shall I turn the volume down?",
+    mute: "Shall I mute the audio?",
+    media_play_pause: "Shall I toggle media playback?",
+    media_next: "Shall I skip to the next track?",
+    media_previous: "Shall I return to the previous track?",
+    lock_screen: "Shall I lock the screen?",
+  };
+  return questions[pcAction.action];
 }
 
 function validateDraftEmail(value) {
@@ -446,13 +547,17 @@ const TIMEOUT_MS = 6000;
 const MAX_TURNS = 10;
 const MAX_CHARS = 2000;
 
-async function callProvider(p, messages, includeDraftTool) {
+async function callProvider(p, messages, includeDraftTool, pcActionTool, capabilities) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const requestBody = { model: p.model, messages, max_tokens: includeDraftTool ? 1200 : 200, temperature: 0.7 };
-    if (includeDraftTool) {
-      requestBody.tools = [DRAFT_EMAIL_TOOL];
+    const tools = [
+      ...(includeDraftTool ? [DRAFT_EMAIL_TOOL] : []),
+      ...(pcActionTool ? [pcActionTool] : []),
+    ];
+    const requestBody = { model: p.model, messages, max_tokens: tools.length ? 1200 : 200, temperature: 0.7 };
+    if (tools.length) {
+      requestBody.tools = tools;
       requestBody.tool_choice = "auto";
     }
 
@@ -481,6 +586,23 @@ async function callProvider(p, messages, includeDraftTool) {
         draft,
         reply: `I've drafted an email to ${draft.recipient}. Say send to send it, or tell me what to change.`,
       };
+    }
+
+    const pcToolCall = Array.isArray(message?.tool_calls)
+      ? message.tool_calls.find((call) => call?.type === "function" && call.function?.name === "pc_action")
+      : null;
+    if (pcToolCall) {
+      try {
+        const proposed = validatePcAction(JSON.parse(pcToolCall.function.arguments), capabilities);
+        if (proposed) {
+          return {
+            pcAction: proposed,
+            reply: pcActionQuestion(proposed),
+          };
+        }
+      } catch {
+        // Ignore invalid model proposals and use the ordinary text reply.
+      }
     }
 
     const text = message?.content?.trim();
@@ -515,7 +637,12 @@ module.exports = async (req, res) => {
   }
 
   const userName = sanitizeUserName(req.body?.userName);
-  const messages = [{ role: "system", content: buildSystemPrompt(userName) }, ...history];
+  const latestUserMessage = history[history.length - 1].content;
+  const hasPcCapabilities = Object.prototype.hasOwnProperty.call(req.body || {}, "pcCapabilities");
+  const pcCapabilities = sanitizePcCapabilities(req.body?.pcCapabilities);
+  const includePcAction = hasPcCapabilities && PC_REQUEST_PATTERN.test(latestUserMessage);
+  const pcActionTool = includePcAction ? buildPcActionTool(pcCapabilities) : null;
+  const messages = [{ role: "system", content: buildSystemPrompt(userName, includePcAction) }, ...history];
   const active = PROVIDERS.filter((p) => p.key);
 
   if (!active.length) {
@@ -523,7 +650,6 @@ module.exports = async (req, res) => {
   }
 
   let searched = false;
-  const latestUserMessage = history[history.length - 1].content;
   const includeDraftTool = DRAFT_EMAIL_PATTERN.test(latestUserMessage);
   const weatherRequest = getWeatherRequest(history);
   if (weatherRequest) {
@@ -556,10 +682,11 @@ module.exports = async (req, res) => {
   for (const p of active) {
     const providerStartedAt = Date.now();
     try {
-      const result = await callProvider(p, messages, includeDraftTool);
+      const result = await callProvider(p, messages, includeDraftTool, pcActionTool, pcCapabilities);
       return res.status(200).json({
         reply: result.reply,
         ...(result.draft ? { draft: result.draft } : {}),
+        ...(result.pcAction ? { pcAction: result.pcAction } : {}),
         provider: p.name,
         searched,
         timing: {

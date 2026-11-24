@@ -59,6 +59,7 @@
   .settings-popover { position: absolute; top: calc(100% + 10px); right: 0; z-index: 5; width: min(280px, calc(100vw - 28px)); padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 36px rgba(25, 43, 68, 0.14); }
   .settings-popover label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
   .settings-popover input, .settings-popover select { width: 100%; min-width: 0; padding: 10px 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  .settings-popover input[type="checkbox"] { width: auto; min-width: 0; margin: 0 7px 0 0; vertical-align: middle; }
   .settings-popover input:focus-visible, .settings-popover select:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
   .settings-popover button { margin-top: 9px; padding: 7px 10px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 0.72rem; }
 
@@ -204,6 +205,11 @@
               <option value="auto">Auto (Fish Audio, then built-in)</option>
               <option value="builtin">Built-in only</option>
             </select>
+            <label for="pc-control-enabled"><input id="pc-control-enabled" type="checkbox">PC control</label>
+            <label for="pc-helper-url">PC helper URL</label>
+            <input id="pc-helper-url" type="url" value="http://127.0.0.1:8765" autocomplete="url" spellcheck="false">
+            <label for="pc-helper-token">PC pairing token</label>
+            <input id="pc-helper-token" type="password" autocomplete="off" spellcheck="false">
           </div>
         </details>
         <button class="quiet-button" id="new-chat" type="button">
@@ -295,6 +301,7 @@ const accessInput = $("#access-code"), accessError = $("#access-error");
 const userNameInput = $("#user-name"), modeButtons = document.querySelectorAll("[data-mode]");
 const modeIndicator = $("#mode-indicator"), standbyNotice = $("#standby-notice");
 const voiceEngineSelect = $("#voice-engine"), ttsAudio = new Audio();
+const pcControlEnabledInput = $("#pc-control-enabled"), pcHelperUrlInput = $("#pc-helper-url"), pcHelperTokenInput = $("#pc-helper-token");
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const LABELS = { idle: "Ready when you are", listening: "Listening… tap the mic to finish", thinking: "Alice is thinking…", speaking: "Alice is speaking. Tap the mic to talk." };
 
@@ -305,7 +312,8 @@ const accessStore = {
 };
 let state = "idle", rec = null, history = [], speakToken = 0, voices = [], activeRequest = null;
 let accessCode = accessStore.get(), accessCodePromise = null, resolveAccessCode = null;
-let pendingDraft = null, editingDraft = false, draftCard = null;
+let pendingItem = null, editingDraft = false, draftCard = null;
+let pcCapabilities = null, pcCapabilitiesRequest = 0, pcCapabilitiesUnavailable = false;
 let mode = "tap", activeSpeechCancel = null;
 let activeAudioUrl = null, audioUnlocked = false;
 let consecutiveFishFailures = 0, fishDisabledForSession = false, builtInNoticeShown = false;
@@ -315,6 +323,7 @@ let standbyRestartTimer = null, standbyRestartCount = 0, standbyRestartWindowSta
 let standbyFailureCount = 0, standbyListeningForCommand = false, awaitingStandbyCommand = false;
 let standbyNoticeShown = false;
 const CONFIRMATION_PATTERN = /^(?:yes(?:,?\s+(?:please(?:\s+send(?: it)?)?|send(?: it)?|go ahead))?|send(?: it)?|go ahead(?: and send(?: it)?)?|confirm)(?: please)?[.!?]*$/i;
+const PC_CONFIRMATION_PATTERN = /^(?:yes(?:,?\s+please)?|confirm|go ahead)(?: please)?[.!?]*$/i;
 const CANCELLATION_PATTERN = /^(?:no|cancel|stop|don't|don’t|discard)(?: it| this draft| the draft)?[.!?]*$/i;
 const CONVERSATION_END_PATTERN = /^(?:goodbye|that's all|stop listening|thank you,? that's all)\b/i;
 const WAKE_WORD_PATTERN = /\b(hey |ok |okay )?alice\b/i;
@@ -458,17 +467,21 @@ function removeDraftCard() {
 
 function renderDraftCard() {
   removeDraftCard();
-  if (!pendingDraft) return;
+  if (!pendingItem) return;
 
   welcome.hidden = true;
   const card = document.createElement("section");
   card.className = "draft-card";
-  card.setAttribute("aria-label", "Email draft");
+  const isEmailDraft = pendingItem.type === "email";
+  const pendingDraft = isEmailDraft ? pendingItem.draft : null;
+  card.setAttribute("aria-label", isEmailDraft ? "Email draft" : "PC action confirmation");
   const heading = document.createElement("h2");
-  heading.textContent = editingDraft ? "Edit email draft" : "Email draft";
+  heading.textContent = isEmailDraft
+    ? editingDraft ? "Edit email draft" : "Email draft"
+    : "Confirm PC action";
   card.append(heading);
 
-  if (editingDraft) {
+  if (isEmailDraft && editingDraft) {
     const fields = {};
     for (const [key, label, value, multiline, maxLength] of [
       ["recipient", "To (contact name)", pendingDraft.recipient, false, 120],
@@ -505,7 +518,7 @@ function renderDraftCard() {
         statusEl.className = "error";
         return;
       }
-      pendingDraft = { recipient, subject, body };
+      pendingItem = { type: "email", draft: { recipient, subject, body } };
       editingDraft = false;
       statusEl.textContent = "Draft updated. It has not been sent.";
       statusEl.className = "";
@@ -521,10 +534,10 @@ function renderDraftCard() {
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = "Cancel draft";
-    cancel.addEventListener("click", () => cancelPendingDraft(false));
+    cancel.addEventListener("click", () => cancelPendingItem(false));
     actions.append(save, stopEditing, cancel);
     card.append(actions);
-  } else {
+  } else if (isEmailDraft) {
     const details = document.createElement("div");
     addDraftField(details, "To", pendingDraft.recipient);
     addDraftField(details, "Subject", pendingDraft.subject);
@@ -541,7 +554,7 @@ function renderDraftCard() {
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = "Cancel";
-    cancel.addEventListener("click", () => cancelPendingDraft(false));
+    cancel.addEventListener("click", () => cancelPendingItem(false));
     const edit = document.createElement("button");
     edit.type = "button";
     edit.textContent = "Edit";
@@ -552,6 +565,25 @@ function renderDraftCard() {
     });
     actions.append(send, cancel, edit);
     card.append(actions);
+  } else {
+    const details = document.createElement("div");
+    addDraftField(details, "Action", pendingItem.action.action.replace(/_/g, " "));
+    if (pendingItem.action.target) addDraftField(details, "Target", pendingItem.action.target);
+    card.append(details);
+
+    const actions = document.createElement("div");
+    actions.className = "draft-actions";
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "primary";
+    confirm.textContent = "Confirm";
+    confirm.addEventListener("click", runPendingPcAction);
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => cancelPendingItem(false));
+    actions.append(confirm, cancel);
+    card.append(actions);
   }
 
   log.append(card);
@@ -560,9 +592,9 @@ function renderDraftCard() {
   card.scrollIntoView({ block: "end", behavior: "smooth" });
 }
 
-function cancelPendingDraft(announce) {
-  if (!pendingDraft) return;
-  pendingDraft = null;
+function cancelPendingItem(announce) {
+  if (!pendingItem) return;
+  pendingItem = null;
   editingDraft = false;
   removeDraftCard();
   if (announce) addLine("user", announce);
@@ -577,6 +609,91 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
+const savedPcControlEnabled = store.get("alicePcControlEnabled") === "true";
+pcControlEnabledInput.checked = savedPcControlEnabled;
+pcHelperUrlInput.value = store.get("alicePcHelperUrl") || "http://127.0.0.1:8765";
+pcHelperTokenInput.value = store.get("alicePcHelperToken") || "";
+pcControlEnabledInput.addEventListener("change", () => {
+  store.set("alicePcControlEnabled", String(pcControlEnabledInput.checked));
+  void refreshPcCapabilities();
+});
+pcHelperUrlInput.addEventListener("change", () => {
+  store.set("alicePcHelperUrl", pcHelperUrlInput.value);
+  void refreshPcCapabilities();
+});
+pcHelperTokenInput.addEventListener("change", () => {
+  store.set("alicePcHelperToken", pcHelperTokenInput.value);
+  void refreshPcCapabilities();
+});
+
+function getPcHelperUrl() {
+  const url = new URL(pcHelperUrlInput.value.trim());
+  if (
+    url.protocol !== "http:" ||
+    !["127.0.0.1", "localhost"].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("The PC helper URL must point to localhost.");
+  }
+  if (url.hostname === "localhost") url.hostname = "127.0.0.1";
+  return url.origin;
+}
+
+function sanitizePcCapabilities(value) {
+  const validKey = /^[a-z0-9 _-]{1,30}$/i;
+  const cleanList = (list) => Array.isArray(list)
+    ? [...new Set(list.filter((key) => typeof key === "string" && validKey.test(key)))].slice(0, 30)
+    : [];
+  return {
+    apps: cleanList(value && value.apps),
+    folders: cleanList(value && value.folders),
+    sites: cleanList(value && value.sites),
+    controls: cleanList(value && value.controls),
+  };
+}
+
+async function refreshPcCapabilities() {
+  const requestId = ++pcCapabilitiesRequest;
+  pcCapabilities = null;
+  pcCapabilitiesUnavailable = false;
+  if (!pcControlEnabledInput.checked) return;
+
+  try {
+    const helperUrl = getPcHelperUrl();
+    const pairingToken = pcHelperTokenInput.value.trim();
+    if (!pairingToken) throw new Error("Pairing token is missing.");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    let response;
+    try {
+      response = await fetch(`${helperUrl}/capabilities`, {
+        headers: { Authorization: `Bearer ${pairingToken}` },
+        redirect: "error",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) throw new Error("PC helper did not accept the request.");
+    const result = await response.json();
+    if (requestId !== pcCapabilitiesRequest) return;
+    pcCapabilities = sanitizePcCapabilities(result);
+    pcCapabilitiesUnavailable = false;
+    announceStatus("PC helper connected.");
+  } catch {
+    if (requestId !== pcCapabilitiesRequest) return;
+    pcCapabilities = null;
+    pcCapabilitiesUnavailable = true;
+    announceStatus("Can't reach the PC helper. Is it running?", true);
+  }
+}
+
+void refreshPcCapabilities();
+
 const savedUserName = store.get("aliceUserName");
 userNameInput.value = savedUserName === null ? "sir" : savedUserName;
 userNameInput.addEventListener("input", () => store.set("aliceUserName", userNameInput.value));
@@ -921,10 +1038,12 @@ async function ask(text, inputTiming = {}, options = {}) {
   const requestStartedAt = performance.now();
   let responseHeadersMs = null;
   try {
+    const requestBody = { messages: requestHistory, userName: getUserName() };
+    if (pcControlEnabledInput.checked && pcCapabilities) requestBody.pcCapabilities = pcCapabilities;
     const res = await authenticatedFetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: requestHistory, userName: getUserName() }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
     if (activeRequest !== controller) return;
@@ -945,13 +1064,18 @@ async function ask(text, inputTiming = {}, options = {}) {
     history.push({ role: "assistant", content: data.reply });
     addLine("alice", data.reply);
     if (data.draft) {
-      pendingDraft = data.draft;
+      pendingItem = { type: "email", draft: data.draft };
       editingDraft = false;
       renderDraftCard();
       void speakAndContinue(
         `To ${data.draft.recipient}. Subject: ${data.draft.subject}. ${data.draft.body} Say send to send it, or cancel.`,
         { requestStartedAt, responseReadyAt },
       );
+    } else if (data.pcAction) {
+      pendingItem = { type: "pc", action: data.pcAction };
+      editingDraft = false;
+      renderDraftCard();
+      void speakAndContinue(data.reply, { requestStartedAt, responseReadyAt });
     } else {
       void speakAndContinue(data.reply, { requestStartedAt, responseReadyAt });
     }
@@ -975,9 +1099,9 @@ async function ask(text, inputTiming = {}, options = {}) {
 }
 
 async function sendPendingDraft() {
-  if (!pendingDraft || state === "thinking") return;
+  if (!pendingItem || pendingItem.type !== "email" || state === "thinking") return;
   unlockAudio();
-  const draft = { ...pendingDraft };
+  const draft = { ...pendingItem.draft };
   setState("thinking", "Sending email…");
   try {
     const res = await authenticatedFetch("/api/send-email", {
@@ -987,7 +1111,7 @@ async function sendPendingDraft() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Email could not be sent. Try again.");
-    pendingDraft = null;
+    pendingItem = null;
     editingDraft = false;
     removeDraftCard();
     addLine("alice", "Sent.");
@@ -999,6 +1123,50 @@ async function sendPendingDraft() {
   }
 }
 
+async function runPendingPcAction() {
+  if (!pendingItem || pendingItem.type !== "pc" || state === "thinking") return;
+  unlockAudio();
+  const pcAction = { ...pendingItem.action };
+  pendingItem = null;
+  editingDraft = false;
+  removeDraftCard();
+  setState("thinking", "Running PC action…");
+
+  let message;
+  try {
+    const helperUrl = getPcHelperUrl();
+    const pairingToken = pcHelperTokenInput.value.trim();
+    let response;
+    try {
+      response = await fetch(`${helperUrl}/run`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${pairingToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: pcAction.action, target: pcAction.target }),
+        redirect: "error",
+      });
+    } catch {
+      throw new Error("The PC helper is unreachable.");
+    }
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok !== true) {
+      throw new Error(response.status === 401
+        ? "The PC helper rejected the pairing token. Check it in Settings."
+        : result.message || "The PC action could not be completed.");
+    }
+    message = typeof result.message === "string" ? result.message : "Done.";
+  } catch (error) {
+    message = error.message || "The PC action could not be completed.";
+    setState("idle", message, true);
+  }
+
+  addLine("alice", message);
+  void speakAndContinue(message);
+}
+
 function handleMessage(text, inputTiming = {}) {
   text = text.trim();
   if (!text || state === "thinking") return;
@@ -1008,18 +1176,39 @@ function handleMessage(text, inputTiming = {}) {
   }
   if (rec) stopListening();
   stopSpeaking();
-  if (!pendingDraft) {
+  if (
+    !pendingItem &&
+    pcControlEnabledInput.checked &&
+    pcCapabilitiesUnavailable &&
+    /\b(open|launch|start|play|pause|next|previous|skip|volume|mute|lock|show)\b/i.test(text)
+  ) {
+    const message = "Can't reach the PC helper. Is it running?";
+    addLine("user", text);
+    history.push({ role: "user", content: text }, { role: "assistant", content: message });
+    history = history.slice(-10);
+    addLine("alice", message);
+    setState("idle", message, true);
+    void speakAndContinue(message);
+    return;
+  }
+  if (!pendingItem) {
     ask(text, inputTiming);
     return;
   }
 
-  if (CONFIRMATION_PATTERN.test(text)) {
+  const isConfirmed = pendingItem.type === "email"
+    ? CONFIRMATION_PATTERN.test(text)
+    : PC_CONFIRMATION_PATTERN.test(text);
+  if (isConfirmed) {
     addLine("user", text);
-    sendPendingDraft();
+    if (pendingItem.type === "email") sendPendingDraft();
+    else runPendingPcAction();
   } else if (CANCELLATION_PATTERN.test(text)) {
-    cancelPendingDraft(text);
+    cancelPendingItem(text);
+  } else if (pendingItem.type === "email") {
+    ask(text, inputTiming, { revisionDraft: pendingItem.draft });
   } else {
-    ask(text, inputTiming, { revisionDraft: pendingDraft });
+    ask(text, inputTiming);
   }
 }
 
@@ -1439,7 +1628,7 @@ $("#new-chat").addEventListener("click", () => {
   stopListening();
   stopSpeaking();
   history = [];
-  pendingDraft = null;
+  pendingItem = null;
   editingDraft = false;
   removeDraftCard();
   log.replaceChildren();
