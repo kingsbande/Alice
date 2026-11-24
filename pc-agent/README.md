@@ -5,7 +5,7 @@ The helper is a plain Node.js 18+ local server with no npm dependencies. It runs
 ## Install and pair
 1. Install Node.js 18 or newer if it is not already installed.
 2. Edit `config.json` and set `allowedOrigin` to the exact origin of your Alice site, for example `https://alice.example.com` (no trailing slash). `http://localhost:3000` is also allowed for local development.
-3. Review and edit `actions.json`. Replace `C:\\Users\\<you>` with your Windows account folder. Every entry grants Alice permission to open that app, folder, or site after you confirm an action; remove anything you do not want available.
+3. Review and edit `actions.json`. The sample Documents and Downloads entries use `C:\\Users\\Datty Mgayi`; replace this with your Windows account folder if it differs. VS Code and VLC paths use `%LOCALAPPDATA%` and `%ProgramFiles%`; edit them if those apps are installed elsewhere. Every app entry grants Alice permission to open or close that app after you confirm; each folder or site entry grants permission to open it. Remove anything you do not want available. Closing an app asks Windows to close it without force; an app may prompt you to save unsaved work.
 4. In a terminal, open this folder and run:
 
    ```text
@@ -18,7 +18,11 @@ The helper is a plain Node.js 18+ local server with no npm dependencies. It runs
 The token file is created with restrictive permissions where the operating system supports them. It is ignored by Git. On later runs, read the token from `token.txt`; the helper does not print it again.
 
 ## Allowed actions and targets
-Edit `actions.json` to configure the app executable paths, folder paths, website URLs, and enabled controls. Alice receives only the configured key names, never the configured paths or URLs. A request can name only a key from the matching group in this file. The helper does not provide arbitrary command execution, file access, typing, screenshots, shutdown, restart, or sleep actions.
+Edit `actions.json` to configure the app executable paths, folder paths, website URLs, and enabled controls. Restart the helper after editing this file. Alice receives only the configured key names, never the configured paths or URLs. A request can name only a key from the matching group in this file. The helper does not provide arbitrary command execution, file access, typing, screenshots, or sleep actions.
+
+The helper can also adjust brightness on Windows devices that expose the standard WMI brightness interface, toggle mute on the default microphone, and ask Windows to close a configured app. Brightness controls may not work with external monitors. Microphone mute affects the default capture device.
+
+**Shutdown and restart are disruptive.** After the normal confirmation card, Alice requires another confirmation: say the exact phrase **“confirm shutdown”** or **“confirm restart”**, or press the clearly labelled final button. The final card warns that unsaved work may be lost. Cancel at either step to do nothing.
 
 ## Security behavior
 - The HTTP listener binds only to `127.0.0.1`; it is not exposed on your network.

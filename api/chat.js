@@ -66,20 +66,27 @@ const PC_ACTIONS = [
   "open_app",
   "open_folder",
   "open_site",
+  "close_app",
   "volume_up",
   "volume_down",
   "mute",
   "media_play_pause",
   "media_next",
   "media_previous",
+  "brightness_up",
+  "brightness_down",
+  "microphone_mute",
   "lock_screen",
+  "shutdown",
+  "restart",
 ];
 const PC_ACTION_TARGETS = {
   open_app: "apps",
   open_folder: "folders",
   open_site: "sites",
+  close_app: "apps",
 };
-const PC_REQUEST_PATTERN = /\b(open|launch|start|play|pause|next|previous|skip|volume|mute|lock|show)\b/i;
+const PC_REQUEST_PATTERN = /\b(open|launch|start|close|quit|exit|play|pause|next|previous|skip|volume|mute|lock|show|brightness|dim|brighter|microphone|mic|shut(?:\s+down)?|restart|reboot)\b/i;
 const PC_TARGET_KEY_PATTERN = /^[a-z0-9 _-]{1,30}$/i;
 
 function sanitizeUserName(value) {
@@ -141,7 +148,7 @@ function buildPcActionTool(capabilities) {
     type: "function",
     function: {
       name: "pc_action",
-      description: "Propose one PC action. The user must confirm it before it can run. Supply a target for open_app, open_folder, and open_site.",
+      description: "Propose one PC action. The user must confirm it before it can run. Supply a target for open_app, close_app, open_folder, and open_site.",
       parameters: {
         type: "object",
         properties: {
@@ -149,18 +156,16 @@ function buildPcActionTool(capabilities) {
           target: { type: "string", enum: targetNames },
         },
         required: ["action"],
-        allOf: [{
-          anyOf: [
-            {
-              properties: { action: { enum: Object.keys(PC_ACTION_TARGETS) } },
-              required: ["action", "target"],
-            },
-            {
-              properties: { action: { enum: PC_ACTIONS.filter((action) => !PC_ACTION_TARGETS[action]) } },
-              required: ["action"],
-            },
-          ],
-        }],
+        anyOf: [
+          {
+            properties: { action: { enum: Object.keys(PC_ACTION_TARGETS) } },
+            required: ["action", "target"],
+          },
+          {
+            properties: { action: { enum: PC_ACTIONS.filter((action) => !PC_ACTION_TARGETS[action]) } },
+            required: ["action"],
+          },
+        ],
         additionalProperties: false,
       },
     },
@@ -186,13 +191,19 @@ function pcActionQuestion(pcAction) {
     open_app: `Shall I open ${target}?`,
     open_folder: `Shall I open the ${target} folder?`,
     open_site: `Shall I open ${target}?`,
+    close_app: `Shall I close ${target}?`,
     volume_up: "Shall I turn the volume up?",
     volume_down: "Shall I turn the volume down?",
     mute: "Shall I mute the audio?",
     media_play_pause: "Shall I toggle media playback?",
     media_next: "Shall I skip to the next track?",
     media_previous: "Shall I return to the previous track?",
+    brightness_up: "Shall I raise the screen brightness?",
+    brightness_down: "Shall I lower the screen brightness?",
+    microphone_mute: "Shall I toggle the default microphone mute?",
     lock_screen: "Shall I lock the screen?",
+    shutdown: "Shall I shut down your PC?",
+    restart: "Shall I restart your PC?",
   };
   return questions[pcAction.action];
 }
@@ -603,6 +614,11 @@ async function callProvider(p, messages, includeDraftTool, pcActionTool, capabil
       } catch {
         // Ignore invalid model proposals and use the ordinary text reply.
       }
+      const text = message?.content?.trim();
+      return {
+        reply: text || "I couldn't make that PC action. Please try asking another way.",
+        draft: null,
+      };
     }
 
     const text = message?.content?.trim();

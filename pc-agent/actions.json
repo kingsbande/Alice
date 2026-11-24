@@ -1,7 +1,9 @@
 {
   "apps": {
     "notepad": "C:\\Windows\\System32\\notepad.exe",
-    "calculator": "C:\\Windows\\System32\\calc.exe"
+    "calculator": "C:\\Windows\\System32\\calc.exe",
+    "vscode": "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
+    "vlc": "%ProgramFiles%\\VideoLAN\\VLC\\vlc.exe"
   },
   "folders": {
     "documents": "C:\\Users\\Datty Mgayi\\Documents",
@@ -18,6 +20,11 @@
     "media_play_pause",
     "media_next",
     "media_previous",
-    "lock_screen"
+    "lock_screen",
+    "brightness_up",
+    "brightness_down",
+    "microphone_mute",
+    "shutdown",
+    "restart"
   ]
 }

@@ -41,9 +41,9 @@ Weather questions use live observations and a three-day forecast from Open-Meteo
 ## PC control (optional, Windows)
 PC control is off by default. To enable it, first run the local helper using the instructions in [pc-agent/README.md](./pc-agent/README.md), set the helper's exact Alice site origin in `pc-agent/config.json`, then paste its pairing token and enable **PC control** in Alice's Settings. The helper is not deployed to Vercel.
 
-Alice can propose only the apps, folders, sites, and controls listed in the helper's local `actions.json`. A proposal appears as a confirmation card and is spoken aloud; it runs only after you press **Confirm** or clearly say “yes”. **Cancel** or “cancel” runs nothing. An email draft or a PC action is the only pending confirmation at a time.
+Alice can propose only the apps, folders, sites, and controls listed in the helper's local `actions.json`. A proposal appears as a confirmation card and is spoken aloud; it runs only after you press **Confirm** or clearly say “yes”. Shutdown and restart require an additional explicit confirmation: say “confirm shutdown” or “confirm restart”, or press the final, clearly labelled button. **Cancel** or “cancel” runs nothing. An email draft or a PC action is the only pending confirmation at a time.
 
-The local helper binds to `127.0.0.1`, requires its bearer token for every request except the CORS preflight, and accepts only configured target keys and supported action names. The AI receives target names only: paths, site URLs, and the pairing token stay in the browser/local helper and are never sent to the cloud. The helper does not run arbitrary shell commands or user/model text; media keys use only a fixed hard-coded snippet. Review `actions.json` carefully: each configured app, folder, and site grants Alice permission to open it when you confirm. PC actions are rate-limited and recorded in the local audit log.
+The local helper binds to `127.0.0.1`, requires its bearer token for every request except the CORS preflight, and accepts only configured target keys and supported action names. The AI receives target names only: paths, site URLs, and the pairing token stay in the browser/local helper and are never sent to the cloud. The helper does not run arbitrary shell commands or user/model text; media keys use only fixed hard-coded snippets. Review `actions.json` carefully: each configured app grants Alice permission to open or close it after confirmation, while each folder or site grants permission to open it. PC actions are rate-limited and recorded in the local audit log.
 
 Chrome's Local Network Access permission is rolling out from Chrome 142. Because Alice's deployed site connects to a loopback helper, Chrome may prompt you to allow that site to access the local network; allow it for PC control to work. This browser permission is separate from Alice's confirmation card and the helper's token/CORS checks. See [Chrome's Local Network Access update](https://developer.chrome.com/blog/local-network-access).
 
@@ -93,10 +93,11 @@ Model names change. If a provider starts failing, set `GROQ_MODEL`, `GEMINI_MODE
 2. With PC control enabled, ask Alice to "open notepad". Check that a confirmation card appears and that Notepad opens only after clicking **Confirm** or saying "yes".
 3. Ask to open Notepad again and click **Cancel** or say "cancel"; verify it does not open.
 4. Remove or rename a target in `pc-agent/actions.json`, restart the helper, and reload Alice. Verify that target is not offered.
-5. Confirm volume up/down, mute, and media play/pause, next, and previous actions; verify each operates the Windows media keys.
-6. Stop the helper before loading (or reload) Alice, then ask for a PC action; Alice should say it can't reach the helper and should not offer an action.
-7. Confirm an action and inspect `pc-agent/audit.log`; it should record the timestamp, action, target key, and result, with no request text, paths, URLs, or token.
-8. Send a request with an `Origin` other than the configured Alice origin or `http://localhost:3000`; the helper must refuse it.
+5. Confirm volume/media actions, brightness changes (on a supported display), microphone mute, and a configured app close. Verify closing an app is not forced and permits its normal save prompt.
+6. Ask Alice to shut down or restart. Verify the first confirmation alone does not run it; cancel, then test the exact second confirmation on a safe occasion.
+7. Stop the helper before loading (or reload) Alice, then ask for a PC action; Alice should say it can't reach the helper and should not offer an action.
+8. Confirm an action and inspect `pc-agent/audit.log`; it should record the timestamp, action, target key, and result, with no request text, paths, URLs, or token.
+9. Send a request with an `Origin` other than the configured Alice origin or `http://localhost:3000`; the helper must refuse it.
 
 ## Notes
 - Voice input needs Chrome or Edge and an internet connection. It sends audio to the browser vendor.

@@ -325,6 +325,12 @@ let standbyNoticeShown = false;
 const CONFIRMATION_PATTERN = /^(?:yes(?:,?\s+(?:please(?:\s+send(?: it)?)?|send(?: it)?|go ahead))?|send(?: it)?|go ahead(?: and send(?: it)?)?|confirm)(?: please)?[.!?]*$/i;
 const PC_CONFIRMATION_PATTERN = /^(?:yes(?:,?\s+please)?|confirm|go ahead)(?: please)?[.!?]*$/i;
 const CANCELLATION_PATTERN = /^(?:no|cancel|stop|don't|don’t|discard)(?: it| this draft| the draft)?[.!?]*$/i;
+const PC_ACTION_TARGET_GROUP = { open_app: "apps", open_folder: "folders", open_site: "sites", close_app: "apps" };
+const PC_ACTIONS = [
+  "open_app", "open_folder", "open_site", "close_app", "volume_up", "volume_down", "mute",
+  "media_play_pause", "media_next", "media_previous", "brightness_up", "brightness_down",
+  "microphone_mute", "lock_screen", "shutdown", "restart",
+];
 const CONVERSATION_END_PATTERN = /^(?:goodbye|that's all|stop listening|thank you,? that's all)\b/i;
 const WAKE_WORD_PATTERN = /\b(hey |ok |okay )?alice\b/i;
 
@@ -569,6 +575,13 @@ function renderDraftCard() {
     const details = document.createElement("div");
     addDraftField(details, "Action", pendingItem.action.action.replace(/_/g, " "));
     if (pendingItem.action.target) addDraftField(details, "Target", pendingItem.action.target);
+    if (pendingItem.awaitingPowerConfirmation) {
+      const warning = document.createElement("p");
+      warning.textContent = pendingItem.action.action === "shutdown"
+        ? "This will immediately shut down your PC. Unsaved work may be lost."
+        : "This will immediately restart your PC. Unsaved work may be lost.";
+      details.append(warning);
+    }
     card.append(details);
 
     const actions = document.createElement("div");
@@ -576,8 +589,10 @@ function renderDraftCard() {
     const confirm = document.createElement("button");
     confirm.type = "button";
     confirm.className = "primary";
-    confirm.textContent = "Confirm";
-    confirm.addEventListener("click", runPendingPcAction);
+    confirm.textContent = pendingItem.awaitingPowerConfirmation
+      ? pendingItem.action.action === "shutdown" ? "Shut down now" : "Restart now"
+      : "Confirm";
+    confirm.addEventListener("click", confirmPendingPcAction);
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = "Cancel";
@@ -654,6 +669,17 @@ function sanitizePcCapabilities(value) {
     sites: cleanList(value && value.sites),
     controls: cleanList(value && value.controls),
   };
+}
+
+function validatePcAction(value) {
+  if (!pcCapabilities || !value || !PC_ACTIONS.includes(value.action)) return null;
+  const group = PC_ACTION_TARGET_GROUP[value.action];
+  if (group) {
+    if (typeof value.target !== "string" || !pcCapabilities[group].includes(value.target)) return null;
+    return { action: value.action, target: value.target };
+  }
+  if (!pcCapabilities.controls.includes(value.action) || (value.target != null && value.target !== "")) return null;
+  return { action: value.action, target: null };
 }
 
 async function refreshPcCapabilities() {
@@ -1052,6 +1078,7 @@ async function ask(text, inputTiming = {}, options = {}) {
     if (activeRequest !== controller) return;
     const responseReadyAt = performance.now();
     if (!res.ok) throw new Error(data.error || "Something went wrong. Try again.");
+    const proposedPcAction = validatePcAction(data.pcAction);
     console.info("[Alice timing]", {
       source: inputTiming.source || "unknown",
       recognitionMs: inputTiming.recognitionMs == null ? null : Math.round(inputTiming.recognitionMs),
@@ -1071,8 +1098,8 @@ async function ask(text, inputTiming = {}, options = {}) {
         `To ${data.draft.recipient}. Subject: ${data.draft.subject}. ${data.draft.body} Say send to send it, or cancel.`,
         { requestStartedAt, responseReadyAt },
       );
-    } else if (data.pcAction) {
-      pendingItem = { type: "pc", action: data.pcAction };
+    } else if (proposedPcAction) {
+      pendingItem = { type: "pc", action: proposedPcAction };
       editingDraft = false;
       renderDraftCard();
       void speakAndContinue(data.reply, { requestStartedAt, responseReadyAt });
@@ -1123,10 +1150,35 @@ async function sendPendingDraft() {
   }
 }
 
+function confirmPendingPcAction() {
+  if (!pendingItem || pendingItem.type !== "pc" || state === "thinking") return;
+  if (pendingItem.action.action === "shutdown" || pendingItem.action.action === "restart") {
+    if (pendingItem.awaitingPowerConfirmation) {
+      void runPendingPcAction();
+      return;
+    }
+    pendingItem.awaitingPowerConfirmation = true;
+    renderDraftCard();
+    const phrase = `confirm ${pendingItem.action.action}`;
+    const message = pendingItem.action.action === "shutdown"
+      ? `This will immediately shut down your PC. Unsaved work may be lost. Say "${phrase}" or press Shut down now.`
+      : `This will immediately restart your PC. Unsaved work may be lost. Say "${phrase}" or press Restart now.`;
+    addLine("alice", message);
+    void speakAndContinue(message);
+    return;
+  }
+  void runPendingPcAction();
+}
+
 async function runPendingPcAction() {
   if (!pendingItem || pendingItem.type !== "pc" || state === "thinking") return;
   unlockAudio();
-  const pcAction = { ...pendingItem.action };
+  const pcAction = validatePcAction(pendingItem.action);
+  if (!pcAction) {
+    cancelPendingItem(false);
+    announceStatus("That PC action is no longer available.", true);
+    return;
+  }
   pendingItem = null;
   editingDraft = false;
   removeDraftCard();
@@ -1180,7 +1232,7 @@ function handleMessage(text, inputTiming = {}) {
     !pendingItem &&
     pcControlEnabledInput.checked &&
     pcCapabilitiesUnavailable &&
-    /\b(open|launch|start|play|pause|next|previous|skip|volume|mute|lock|show)\b/i.test(text)
+    /\b(open|launch|start|close|quit|exit|play|pause|next|previous|skip|volume|mute|lock|show|brightness|dim|brighter|microphone|mic|shut(?:\s+down)?|restart|reboot)\b/i.test(text)
   ) {
     const message = "Can't reach the PC helper. Is it running?";
     addLine("user", text);
@@ -1196,15 +1248,26 @@ function handleMessage(text, inputTiming = {}) {
     return;
   }
 
-  const isConfirmed = pendingItem.type === "email"
-    ? CONFIRMATION_PATTERN.test(text)
-    : PC_CONFIRMATION_PATTERN.test(text);
-  if (isConfirmed) {
-    addLine("user", text);
-    if (pendingItem.type === "email") sendPendingDraft();
-    else runPendingPcAction();
-  } else if (CANCELLATION_PATTERN.test(text)) {
+  if (CANCELLATION_PATTERN.test(text)) {
     cancelPendingItem(text);
+  } else if (pendingItem.type === "pc" && pendingItem.awaitingPowerConfirmation) {
+    const phrase = `confirm ${pendingItem.action.action}`;
+    const spoken = text.trim().replace(/[.!?]+$/, "").trim().toLowerCase();
+    if (spoken === phrase || spoken === `${phrase} please`) {
+      addLine("user", text);
+      void runPendingPcAction();
+    } else {
+      if (PC_CONFIRMATION_PATTERN.test(text)) addLine("user", text);
+      const request = `To continue, say "${phrase}" or press the confirmation button.`;
+      addLine("alice", request);
+      void speakAndContinue(request);
+    }
+  } else if (pendingItem.type === "email" && CONFIRMATION_PATTERN.test(text)) {
+    addLine("user", text);
+    sendPendingDraft();
+  } else if (pendingItem.type === "pc" && PC_CONFIRMATION_PATTERN.test(text)) {
+    addLine("user", text);
+    confirmPendingPcAction();
   } else if (pendingItem.type === "email") {
     ask(text, inputTiming, { revisionDraft: pendingItem.draft });
   } else {
